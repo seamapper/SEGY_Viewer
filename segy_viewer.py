@@ -257,8 +257,11 @@ class SegyPlotWidget(FigureCanvas):
         self.ax.set_ylabel('TWT [ms]')
         self.ax.set_title(f'{file_info["filename"]}')
         
-        # Add colorbar and store reference
-        self.colorbar = self.fig.colorbar(im, ax=self.ax, label='Amplitude')
+        # Add colorbar with reduced padding
+        self.colorbar = self.fig.colorbar(im, ax=self.ax, label='Amplitude', pad=0.02)
+        
+        # Reduce plot margins to maximize plot area
+        self.fig.subplots_adjust(left=0.08, bottom=0.10, right=0.97, top=0.95)
         
         # Refresh the canvas
         self.draw()

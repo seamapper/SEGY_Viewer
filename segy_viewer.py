@@ -14,7 +14,7 @@ import segyio
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QFileDialog, QTextEdit, 
                              QLabel, QSplitter, QMessageBox, QProgressBar,
-                             QGroupBox, QGridLayout, QSpinBox, QComboBox,
+                             QProgressDialog, QGroupBox, QGridLayout, QSpinBox, QComboBox,
                              QCheckBox, QLineEdit)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -27,7 +27,8 @@ Program by Paul Johnson, pjohnson@ccom.unh.edu
 Date: 2025-09-12
 """
 
-__version__ = "2025.04"  #Added ability to save full resolution plots and shapefiles
+# __version__ = "2025.04"  #Added ability to save full resolution plots and shapefiles
+__version__ = "2025.05"  #Add batch processing of SEGY files
 
 class SegyConfig:
     """Configuration management for SEGY GUI settings"""
@@ -562,6 +563,12 @@ class SegyGui(QMainWindow):
         self.save_shapefile_button.setEnabled(False)
         self.save_shapefile_button.setMaximumHeight(30)
         layout.addWidget(self.save_shapefile_button)
+        
+        # Batch process button
+        self.batch_process_button = QPushButton("Batch Process")
+        self.batch_process_button.clicked.connect(self.batch_process)
+        self.batch_process_button.setMaximumHeight(30)  # Make button more compact
+        layout.addWidget(self.batch_process_button)
         
         return group
     
@@ -2122,6 +2129,462 @@ class SegyGui(QMainWindow):
                 QMessageBox.critical(self, "Error", f"Failed to save header information:\n{str(e)}")
                 self.statusBar().showMessage("Header information export failed")
     
+    def batch_process(self):
+        """Batch process multiple SEGY files"""
+        # Get file selection
+        last_dir = self.config.get('last_open_directory', '')
+        filenames, _ = QFileDialog.getOpenFileNames(
+            self, "Select SEGY Files to Process", last_dir, "SEGY Files (*.sgy *.segy);;All Files (*)"
+        )
+        
+        if not filenames:
+            return
+        
+        # Get output directory
+        last_save_dir = self.config.get('last_save_directory', '')
+        output_dir = QFileDialog.getExistingDirectory(
+            self, "Select Output Directory", last_save_dir
+        )
+        
+        if not output_dir:
+            return
+        
+        # Update last save directory
+        self.config.update_last_save_directory(output_dir)
+        
+        # Get current settings
+        colormap = self.colormap_combo.currentText()
+        clip_percentile = self.clip_spinbox.value()
+        full_resolution = self.full_res_checkbox.isChecked()
+        
+        # Create progress dialog
+        progress = QProgressDialog("Processing files...", "Cancel", 0, len(filenames), self)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        
+        # Store shapefile paths for combining
+        all_point_shapefiles = []
+        all_line_shapefiles = []
+        processed_count = 0
+        error_count = 0
+        
+        # Process each file
+        for i, filename in enumerate(filenames):
+            if progress.wasCanceled():
+                break
+            
+            progress.setValue(i)
+            progress.setLabelText(f"Processing: {os.path.basename(filename)} ({i+1}/{len(filenames)})")
+            QApplication.processEvents()
+            
+            try:
+                # Load file data
+                data, trace_headers, text_headers, bin_headers, file_info = self._load_segy_file_data(filename)
+                
+                if data is None or file_info is None:
+                    error_count += 1
+                    continue
+                
+                base_name = Path(file_info['filename']).stem
+                
+                # Save plot
+                plot_path = os.path.join(output_dir, f"{base_name}_plot.png")
+                self._save_plot_for_file(data, file_info, plot_path, colormap, clip_percentile, full_resolution)
+                
+                # Save shapefile
+                shapefile_base = os.path.join(output_dir, f"{base_name}_source_points")
+                point_path, line_path = self._save_shapefile_for_file(trace_headers, shapefile_base)
+                if point_path:
+                    all_point_shapefiles.append(point_path)
+                if line_path:
+                    all_line_shapefiles.append(line_path)
+                
+                # Save header info
+                txt_path = os.path.join(output_dir, f"{base_name}.txt")
+                self._save_header_info_for_file(file_info, text_headers, bin_headers, txt_path)
+                
+                processed_count += 1
+                
+            except Exception as e:
+                error_count += 1
+                self.statusBar().showMessage(f"Error processing {os.path.basename(filename)}: {str(e)}")
+                continue
+        
+        progress.setValue(len(filenames))
+        
+        # Combine shapefiles if we have multiple files
+        if len(all_point_shapefiles) > 1:
+            try:
+                combined_point_path = os.path.join(output_dir, "SEGY_Combined_Nav_points.shp")
+                combined_line_path = os.path.join(output_dir, "SEGY_Combined_Nav_line.shp")
+                self._combine_shapefiles(all_point_shapefiles, all_line_shapefiles, 
+                                       combined_point_path, combined_line_path)
+            except Exception as e:
+                self.statusBar().showMessage(f"Error combining shapefiles: {str(e)}")
+        
+        # Show completion message
+        message = f"Batch processing complete!\n\nProcessed: {processed_count}\nErrors: {error_count}"
+        if len(all_point_shapefiles) > 1:
+            message += f"\n\nCombined shapefiles created in output directory."
+        QMessageBox.information(self, "Batch Processing Complete", message)
+        self.statusBar().showMessage(f"Batch processing complete: {processed_count} files processed, {error_count} errors")
+    
+    def _load_segy_file_data(self, filename):
+        """Load SEGY file data without updating GUI"""
+        try:
+            with segyio.open(filename, ignore_geometry=True, strict=False) as f:
+                # Get basic attributes
+                n_traces = f.tracecount
+                sample_rate = segyio.tools.dt(f) / 1000
+                n_samples = f.samples.size
+                twt = f.samples
+                
+                # Load data
+                data = f.trace.raw[:]
+                
+                # Load headers
+                bin_headers = f.bin
+                text_headers = self._parse_text_header(f)
+                trace_headers = self._parse_trace_headers(f, n_traces)
+                
+                # File information
+                file_info = {
+                    'filename': os.path.basename(filename),
+                    'n_traces': n_traces,
+                    'n_samples': n_samples,
+                    'sample_rate': sample_rate,
+                    'twt': twt
+                }
+                
+                return data, trace_headers, text_headers, bin_headers, file_info
+        except Exception as e:
+            return None, None, None, None, None
+    
+    def _parse_text_header(self, segyfile):
+        """Parse text header (duplicate of SegyLoaderThread method)"""
+        try:
+            raw_header = segyio.tools.wrap(segyfile.text[0])
+            cut_header = re.split(r'C ', raw_header)[1::]
+            text_header = [x.replace('\n', ' ') for x in cut_header]
+            
+            if not text_header:
+                return {"C01": "No text header found or unsupported format"}
+            
+            if text_header[-1]:
+                text_header[-1] = text_header[-1][:-2]
+            
+            clean_header = {}
+            i = 1
+            for item in text_header:
+                key = "C" + str(i).rjust(2, '0')
+                i += 1
+                clean_header[key] = item
+            return clean_header
+        except Exception as e:
+            return {"C01": f"Text header parsing failed: {str(e)}"}
+    
+    def _parse_trace_headers(self, segyfile, n_traces):
+        """Parse trace headers (duplicate of SegyLoaderThread method)"""
+        headers = segyio.tracefield.keys
+        df = pd.DataFrame(index=range(1, n_traces + 1), columns=headers.keys())
+        for k, v in headers.items():
+            df[k] = segyfile.attributes(v)[:]
+        return df
+    
+    def _save_plot_for_file(self, data, file_info, filename, colormap, clip_percentile, full_resolution):
+        """Save plot for a specific file"""
+        # Calculate amplitude clipping
+        vm = np.percentile(data, clip_percentile)
+        vm0 = 0
+        vm1 = vm
+        
+        # Create extent
+        n_traces = file_info['n_traces']
+        twt = file_info['twt']
+        extent = [1, n_traces, twt[-1], twt[0]]
+        
+        if full_resolution:
+            # Calculate figure size based on data dimensions
+            data_shape = data.shape
+            fig_width = max(12, data_shape[1] * 0.01)
+            fig_height = max(8, data_shape[0] * 0.002)
+            fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=300)
+        else:
+            fig, ax = plt.subplots(figsize=(12, 6), dpi=300)
+        
+        # Plot the data
+        im = ax.imshow(data.T, cmap=colormap, vmin=vm0, vmax=vm1, 
+                      aspect='auto', extent=extent)
+        
+        # Add labels and title
+        ax.set_xlabel('CDP number')
+        ax.set_ylabel('TWT [ms]')
+        title = f'{file_info["filename"]}'
+        if full_resolution:
+            title += ' (Full Resolution)'
+        ax.set_title(title)
+        
+        # Add colorbar
+        plt.colorbar(im, ax=ax, label='Amplitude')
+        
+        # Save
+        fig.savefig(filename, dpi=300, bbox_inches='tight', 
+                   facecolor='white', edgecolor='none')
+        plt.close(fig)
+    
+    def _format_datetime_from_trace(self, trace_data):
+        """Format date/time string from trace header data"""
+        try:
+            year = trace_data.get('YearDataRecorded', None)
+            day = trace_data.get('DayOfYear', None)
+            hour = trace_data.get('HourOfDay', None)
+            minute = trace_data.get('MinuteOfHour', None)
+            second = trace_data.get('SecondOfMinute', None)
+            
+            # Check if we have valid date/time data
+            if year is None or pd.isna(year) or day is None or pd.isna(day):
+                return None
+            
+            # Handle 2-digit years (assume 1900-2099 range)
+            if year < 100:
+                if year < 50:
+                    year = 2000 + year
+                else:
+                    year = 1900 + year
+            
+            # Format as YYYY-DOY HH:MM:SS
+            if hour is not None and not pd.isna(hour) and minute is not None and not pd.isna(minute):
+                if second is not None and not pd.isna(second):
+                    return f"{int(year)}-{int(day):03d} {int(hour):02d}:{int(minute):02d}:{int(second):02d}"
+                else:
+                    return f"{int(year)}-{int(day):03d} {int(hour):02d}:{int(minute):02d}:00"
+            else:
+                return f"{int(year)}-{int(day):03d}"
+        except:
+            return None
+    
+    def _save_shapefile_for_file(self, trace_headers, shapefile_base_path):
+        """Save shapefile for a specific file, returns (point_path, line_path)"""
+        try:
+            import geopandas as gpd
+            from shapely.geometry import Point, LineString
+        except ImportError:
+            try:
+                import fiona
+                from shapely.geometry import Point, LineString
+                import json
+            except ImportError:
+                return None, None
+        
+        # Extract coordinates
+        cdp_data = []
+        line_coords = []
+        coord_units = 2  # Default coordinate units
+        
+        for i, trace_num in enumerate(trace_headers.index):
+            trace_data = trace_headers.loc[trace_num]
+            
+            # Get source coordinates
+            source_x = trace_data.get('SourceX', None)
+            source_y = trace_data.get('SourceY', None)
+            
+            if source_x is None or source_y is None:
+                source_x = trace_data.get('GroupX', None)
+                source_y = trace_data.get('GroupY', None)
+            
+            if source_x is None or source_y is None:
+                source_x = trace_data.get('CDP_X', None)
+                source_y = trace_data.get('CDP_Y', None)
+            
+            if source_x is None or source_y is None:
+                continue
+            
+            if abs(float(source_x)) < 1e-6 and abs(float(source_y)) < 1e-6:
+                continue
+            
+            # Get coordinate units from first valid trace
+            if not cdp_data:
+                coord_units = trace_data.get('CoordinateUnits', 2)
+            
+            source_group_scalar = trace_data.get('SourceGroupScalar', 1)
+            
+            # Apply SourceGroupScalar to coordinates
+            if source_group_scalar > 0:
+                x_coord = float(source_x) * source_group_scalar
+                y_coord = float(source_y) * source_group_scalar
+            elif source_group_scalar < 0:
+                x_coord = float(source_x) / abs(source_group_scalar)
+                y_coord = float(source_y) / abs(source_group_scalar)
+            else:
+                # scalar = 0 means scalar = 1
+                x_coord = float(source_x)
+                y_coord = float(source_y)
+            
+            # Convert coordinates based on units
+            if coord_units == 1:  # Length (meters/feet) - treat as local coordinates
+                pass  # Already in meters/feet
+            elif coord_units == 2:  # Seconds of arc
+                x_coord = x_coord / 3600.0  # Convert to degrees
+                y_coord = y_coord / 3600.0
+            elif coord_units == 3:  # Decimal degrees
+                pass  # Already in degrees
+            elif coord_units == 4:  # Degrees, minutes, seconds
+                # For now, treat as decimal degrees (would need proper DMS parsing)
+                pass  # Already in degrees
+            else:
+                # Unknown units - assume decimal degrees
+                pass
+            
+            line_coords.append((x_coord, y_coord))
+            
+            # Get date/time for this trace
+            trace_datetime = self._format_datetime_from_trace(trace_data)
+            
+            cdp_data.append({
+                'geometry': Point(x_coord, y_coord),
+                'CDP_NUM': int(trace_data.get('CDP', trace_num)),
+                'TRACE_NUM': int(trace_num),
+                'TRACE_SEQ': int(trace_data.get('TRACE_SEQUENCE_LINE', trace_num)),
+                'SOURCE_X': x_coord,
+                'SOURCE_Y': y_coord,
+                'COORD_UNIT': int(coord_units),
+                'SCALAR': int(source_group_scalar),
+                'OFFSET': float(trace_data.get('offset', 0)),
+                'ELEVATION': float(trace_data.get('SourceSurfaceElevation', 0)),
+                'DATETIME': trace_datetime if trace_datetime else ''
+            })
+        
+        if not cdp_data:
+            return None, None
+        
+        point_path = None
+        line_path = None
+        
+        # Create point shapefile
+        try:
+            gdf_points = gpd.GeoDataFrame(cdp_data)
+            if coord_units in [2, 3, 4]:
+                gdf_points.crs = "EPSG:4326"
+            else:
+                gdf_points.crs = None
+            
+            point_path = f"{shapefile_base_path}_points.shp"
+            gdf_points.to_file(point_path)
+        except:
+            pass
+        
+        # Create line shapefile
+        if len(line_coords) > 1:
+            try:
+                line_geometry = LineString(line_coords)
+                
+                # Get start and end date/time from first and last traces
+                first_trace_num = trace_headers.index[0]
+                last_trace_num = trace_headers.index[-1]
+                first_trace_data = trace_headers.loc[first_trace_num]
+                last_trace_data = trace_headers.loc[last_trace_num]
+                
+                start_datetime = self._format_datetime_from_trace(first_trace_data)
+                end_datetime = self._format_datetime_from_trace(last_trace_data)
+                
+                # Create line GeoDataFrame with date/time fields
+                line_attrs = {'geometry': line_geometry}
+                if start_datetime:
+                    line_attrs['START_DT'] = start_datetime
+                else:
+                    line_attrs['START_DT'] = ''
+                if end_datetime:
+                    line_attrs['END_DT'] = end_datetime
+                else:
+                    line_attrs['END_DT'] = ''
+                
+                gdf_line = gpd.GeoDataFrame([line_attrs])
+                if coord_units in [2, 3, 4]:
+                    gdf_line.crs = "EPSG:4326"
+                else:
+                    gdf_line.crs = None
+                
+                line_path = f"{shapefile_base_path}_line.shp"
+                gdf_line.to_file(line_path)
+            except:
+                pass
+        
+        return point_path, line_path
+    
+    def _save_header_info_for_file(self, file_info, text_headers, bin_headers, filename):
+        """Save header information for a specific file"""
+        info_text = f"FILE INFORMATION\n"
+        info_text += f"{'='*50}\n"
+        info_text += f"Filename: {file_info['filename']}\n"
+        info_text += f"Number of Traces: {file_info['n_traces']:,}\n"
+        info_text += f"Number of Samples: {file_info['n_samples']:,}\n"
+        info_text += f"Sample Rate: {file_info['sample_rate']:.2f} ms\n"
+        info_text += f"Time Window: {file_info['twt'][0]:.1f} - {file_info['twt'][-1]:.1f} ms\n\n"
+        
+        # Binary headers
+        info_text += f"BINARY HEADERS\n"
+        info_text += f"{'='*50}\n"
+        for key, value in bin_headers.items():
+            field_name = str(key)
+            description = self.decode_binary_header_value(key, value)
+            if description:
+                info_text += f"{field_name}: {value} ({description})\n"
+            else:
+                info_text += f"{field_name}: {value}\n"
+        info_text += "\n"
+        
+        # Text headers
+        info_text += f"TEXT HEADERS\n"
+        info_text += f"{'='*50}\n"
+        for key, value in text_headers.items():
+            info_text += f"{key}: {value}\n"
+        info_text += "\n"
+        
+        # Write to file
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(info_text)
+    
+    def _combine_shapefiles(self, point_paths, line_paths, combined_point_path, combined_line_path):
+        """Combine multiple shapefiles into one"""
+        try:
+            import geopandas as gpd
+            
+            # Combine point shapefiles
+            if point_paths:
+                point_gdfs = []
+                for path in point_paths:
+                    if os.path.exists(path):
+                        gdf = gpd.read_file(path)
+                        # Add source file name
+                        base_name = Path(path).stem.replace('_source_points_points', '')
+                        gdf['SOURCE_FILE'] = base_name
+                        point_gdfs.append(gdf)
+                
+                if point_gdfs:
+                    combined_points = gpd.GeoDataFrame(pd.concat(point_gdfs, ignore_index=True))
+                    # Preserve CRS from first file
+                    if point_gdfs[0].crs is not None:
+                        combined_points.crs = point_gdfs[0].crs
+                    combined_points.to_file(combined_point_path)
+            
+            # Combine line shapefiles
+            if line_paths:
+                line_gdfs = []
+                for path in line_paths:
+                    if os.path.exists(path):
+                        gdf = gpd.read_file(path)
+                        base_name = Path(path).stem.replace('_source_points_line', '')
+                        gdf['SOURCE_FILE'] = base_name
+                        line_gdfs.append(gdf)
+                
+                if line_gdfs:
+                    combined_lines = gpd.GeoDataFrame(pd.concat(line_gdfs, ignore_index=True))
+                    if line_gdfs[0].crs is not None:
+                        combined_lines.crs = line_gdfs[0].crs
+                    combined_lines.to_file(combined_line_path)
+        except Exception as e:
+            raise Exception(f"Failed to combine shapefiles: {str(e)}")
+    
     def _create_cdp_shapefile(self, shapefile_path):
         """Create both point and line shapefiles with CDP coordinates"""
         try:
@@ -2201,6 +2664,9 @@ class SegyGui(QMainWindow):
             # Create point geometry
             point = Point(x_coord, y_coord)
             
+            # Get date/time for this trace
+            trace_datetime = self._format_datetime_from_trace(trace_data)
+            
             # Collect attributes
             attributes = {
                 'CDP_NUM': trace_data.get('CDP', i + 1),
@@ -2211,7 +2677,8 @@ class SegyGui(QMainWindow):
                 'COORD_UNIT': coord_units,
                 'SCALAR': source_group_scalar,
                 'OFFSET': trace_data.get('offset', 0),
-                'ELEVATION': trace_data.get('ReceiverGroupElevation', 0)
+                'ELEVATION': trace_data.get('ReceiverGroupElevation', 0),
+                'DATETIME': trace_datetime if trace_datetime else ''
             }
             
             # Debug: Print first few coordinates to verify conversion
@@ -2284,7 +2751,8 @@ class SegyGui(QMainWindow):
                     'COORD_UNIT': 'int',
                     'SCALAR': 'int',
                     'OFFSET': 'float',
-                    'ELEVATION': 'float'
+                    'ELEVATION': 'float',
+                    'DATETIME': 'str:80'
                 }
             }
             
@@ -2308,6 +2776,15 @@ class SegyGui(QMainWindow):
                 # Create line geometry connecting all points in sequence
                 line_geometry = LineString(line_coords)
                 
+                # Get start and end date/time from first and last traces
+                first_trace_num = self.current_headers.index[0]
+                last_trace_num = self.current_headers.index[-1]
+                first_trace_data = self.current_headers.loc[first_trace_num]
+                last_trace_data = self.current_headers.loc[last_trace_num]
+                
+                start_datetime = self._format_datetime_from_trace(first_trace_data)
+                end_datetime = self._format_datetime_from_trace(last_trace_data)
+                
                 line_data = [{
                     'geometry': line_geometry,
                     'LINE_ID': 1,
@@ -2316,7 +2793,9 @@ class SegyGui(QMainWindow):
                     'END_TRACE': cdp_data[-1]['TRACE_NUM'],
                     'LENGTH_M': 0,  # Could calculate actual length if needed
                     'COORD_UNIT': coord_units,
-                    'SCALAR': source_group_scalar
+                    'SCALAR': source_group_scalar,
+                    'START_DT': start_datetime if start_datetime else '',
+                    'END_DT': end_datetime if end_datetime else ''
                 }]
                 
                 gdf_line = gpd.GeoDataFrame(line_data)
@@ -2334,6 +2813,15 @@ class SegyGui(QMainWindow):
                 
             except NameError:
                 # Fallback using fiona
+                # Get start and end date/time from first and last traces
+                first_trace_num = self.current_headers.index[0]
+                last_trace_num = self.current_headers.index[-1]
+                first_trace_data = self.current_headers.loc[first_trace_num]
+                last_trace_data = self.current_headers.loc[last_trace_num]
+                
+                start_datetime = self._format_datetime_from_trace(first_trace_data)
+                end_datetime = self._format_datetime_from_trace(last_trace_data)
+                
                 line_schema = {
                     'geometry': 'LineString',
                     'properties': {
@@ -2343,9 +2831,15 @@ class SegyGui(QMainWindow):
                         'END_TRACE': 'int',
                         'LENGTH_M': 'float',
                         'COORD_UNIT': 'int',
-                        'SCALAR': 'int'
+                        'SCALAR': 'int',
+                        'START_DT': 'str:80',
+                        'END_DT': 'str:80'
                     }
                 }
+                
+                # Update line_data with date/time fields
+                line_data[0]['START_DT'] = start_datetime if start_datetime else ''
+                line_data[0]['END_DT'] = end_datetime if end_datetime else ''
                 
                 # Set CRS based on coordinate units
                 if coord_units in [2, 3, 4]:

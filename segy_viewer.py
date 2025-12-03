@@ -226,7 +226,7 @@ class SegyPlotWidget(FigureCanvas):
         # Connect mouse click event
         self.mpl_connect('button_press_event', self.on_click)
         
-    def plot_segy_data(self, data, file_info, trace_headers=None, clip_percentile=99, colormap='BuPu'):
+    def plot_segy_data(self, data, file_info, trace_headers=None, clip_percentile=99, colormap='BuPu', depth_mode=False, velocity=1500.0):
         """Plot SEGY data"""
         self.data = data
         self.file_info = file_info
@@ -246,7 +246,20 @@ class SegyPlotWidget(FigureCanvas):
         # Create extent for proper axis labeling
         n_traces = file_info['n_traces']
         twt = file_info['twt']
-        extent = [1, n_traces, twt[-1], twt[0]]
+        
+        # Convert TWT to depth if depth mode is enabled
+        if depth_mode:
+            # Convert TWT (ms) to depth (m): Depth = (TWT_ms / 1000) × Velocity_m/s / 2
+            depth = (twt / 1000.0) * velocity / 2.0
+            y_min = depth[-1]  # Last depth value (deepest)
+            y_max = depth[0]   # First depth value (shallowest)
+            y_label = 'Depth [m]'
+        else:
+            y_min = twt[-1]  # Last TWT value (deepest)
+            y_max = twt[0]   # First TWT value (shallowest)
+            y_label = 'TWT [ms]'
+        
+        extent = [1, n_traces, y_min, y_max]
         
         # Plot the data
         im = self.ax.imshow(data.T, cmap=colormap, vmin=vm0, vmax=vm1, 
@@ -254,7 +267,7 @@ class SegyPlotWidget(FigureCanvas):
         
         # Set labels and title
         self.ax.set_xlabel('CDP number')
-        self.ax.set_ylabel('TWT [ms]')
+        self.ax.set_ylabel(y_label)
         self.ax.set_title(f'{file_info["filename"]}')
         
         # Add colorbar with reduced padding
@@ -329,6 +342,8 @@ class SegyPlotWidget(FigureCanvas):
                 # Get current settings
                 clip_percentile = main_window.clip_spinbox.value()
                 colormap = main_window.colormap_combo.currentText()
+                depth_mode = main_window.depth_mode_checkbox.isChecked()
+                velocity = main_window.velocity_spinbox.value()
                 
                 # Calculate amplitude clipping (same as interactive plot)
                 vm = np.percentile(self.data, clip_percentile)
@@ -338,7 +353,20 @@ class SegyPlotWidget(FigureCanvas):
                 # Create extent for proper axis labeling (same as interactive plot)
                 n_traces = self.file_info['n_traces']
                 twt = self.file_info['twt']
-                extent = [1, n_traces, twt[-1], twt[0]]
+                
+                # Convert TWT to depth if depth mode is enabled
+                if depth_mode:
+                    # Convert TWT (ms) to depth (m): Depth = (TWT_ms / 1000) × Velocity_m/s / 2
+                    depth = (twt / 1000.0) * velocity / 2.0
+                    y_min = depth[-1]  # Last depth value (deepest)
+                    y_max = depth[0]   # First depth value (shallowest)
+                    y_label = 'Depth [m]'
+                else:
+                    y_min = twt[-1]  # Last TWT value (deepest)
+                    y_max = twt[0]   # First TWT value (shallowest)
+                    y_label = 'TWT [ms]'
+                
+                extent = [1, n_traces, y_min, y_max]
                 
                 # Calculate figure size based on data dimensions
                 data_shape = self.data.shape
@@ -355,7 +383,7 @@ class SegyPlotWidget(FigureCanvas):
                 
                 # Add labels and title (same as interactive plot)
                 ax.set_xlabel('CDP number')
-                ax.set_ylabel('TWT [ms]')
+                ax.set_ylabel(y_label)
                 ax.set_title(f'{self.file_info["filename"]} (Full Resolution)')
                 
                 # Add colorbar (same as interactive plot)
@@ -450,6 +478,8 @@ class SegyGui(QMainWindow):
         self.current_trace_number = 1  # Track current selected trace
         self.show_byte_locations = False  # Track byte location display state
         self.show_binary_descriptions = True  # Track binary header description display state
+        self.depth_mode = False  # Track if depth mode is enabled
+        self.velocity = 1500.0  # Default velocity in m/s
         self.init_ui()
         
     def init_ui(self):
@@ -517,6 +547,26 @@ class SegyGui(QMainWindow):
         layout.addWidget(self.file_label)
         
         layout.addStretch()
+        
+        # Depth mode toggle (enabled from start for batch processing)
+        self.depth_mode_checkbox = QCheckBox("Depth")
+        self.depth_mode_checkbox.setMaximumHeight(30)
+        self.depth_mode_checkbox.setChecked(False)
+        self.depth_mode_checkbox.stateChanged.connect(self.on_depth_mode_changed)
+        layout.addWidget(self.depth_mode_checkbox)
+        
+        # Velocity parameter (enabled from start for batch processing)
+        velocity_label = QLabel("Velocity (m/s):")
+        velocity_label.setMaximumHeight(30)
+        layout.addWidget(velocity_label)
+        
+        self.velocity_spinbox = QSpinBox()
+        self.velocity_spinbox.setRange(1000, 5000)
+        self.velocity_spinbox.setValue(1500)
+        self.velocity_spinbox.setMaximumHeight(30)
+        self.velocity_spinbox.setMaximumWidth(80)
+        self.velocity_spinbox.valueChanged.connect(self.on_velocity_changed)
+        layout.addWidget(self.velocity_spinbox)
         
         # Plot options
         clip_label = QLabel("Clip %:")
@@ -758,6 +808,7 @@ class SegyGui(QMainWindow):
         self.update_button.setEnabled(True)
         self.save_button.setEnabled(True)
         self.full_res_checkbox.setEnabled(True)
+        # depth_mode_checkbox and velocity_spinbox are always enabled (for batch processing)
         self.save_info_button.setEnabled(True)
         self.save_shapefile_button.setEnabled(True)
         
@@ -2018,22 +2069,44 @@ class SegyGui(QMainWindow):
             # Automatically update the plot
             self.update_plot()
     
+    def on_depth_mode_changed(self, state):
+        """Handle depth mode toggle change - automatically update plot if data is loaded"""
+        if self.current_data is not None and self.current_file_info is not None:
+            # Automatically update the plot
+            self.update_plot()
+    
+    def on_velocity_changed(self, velocity):
+        """Handle velocity change - automatically update plot if data is loaded and depth mode is on"""
+        if self.current_data is not None and self.current_file_info is not None:
+            # Only update if depth mode is enabled
+            if self.depth_mode_checkbox.isChecked():
+                # Automatically update the plot
+                self.update_plot()
+    
     def update_plot(self):
         """Update the plot with current settings"""
         if self.current_data is not None and self.current_file_info is not None:
             clip_percentile = self.clip_spinbox.value()
             colormap = self.colormap_combo.currentText()
+            depth_mode = self.depth_mode_checkbox.isChecked()
+            velocity = self.velocity_spinbox.value()
             
             # Save current settings
             self.config.update_clip_percentile(clip_percentile)
             self.config.update_colormap(colormap)
+            
+            # Update instance variables
+            self.depth_mode = depth_mode
+            self.velocity = velocity
             
             vm, vm1 = self.plot_widget.plot_segy_data(
                 self.current_data, 
                 self.current_file_info, 
                 self.current_headers,
                 clip_percentile, 
-                colormap
+                colormap,
+                depth_mode,
+                velocity
             )
             
             self.statusBar().showMessage(
@@ -2186,6 +2259,8 @@ class SegyGui(QMainWindow):
         colormap = self.colormap_combo.currentText()
         clip_percentile = self.clip_spinbox.value()
         full_resolution = self.full_res_checkbox.isChecked()
+        depth_mode = self.depth_mode_checkbox.isChecked()
+        velocity = self.velocity_spinbox.value()
         
         # Create progress dialog
         progress = QProgressDialog("Processing files...", "Cancel", 0, len(filenames), self)
@@ -2219,7 +2294,7 @@ class SegyGui(QMainWindow):
                 
                 # Save plot
                 plot_path = os.path.join(output_dir, f"{base_name}_plot.png")
-                self._save_plot_for_file(data, file_info, plot_path, colormap, clip_percentile, full_resolution)
+                self._save_plot_for_file(data, file_info, plot_path, colormap, clip_percentile, full_resolution, depth_mode, velocity)
                 
                 # Save shapefile
                 shapefile_base = os.path.join(output_dir, f"{base_name}_source_points")
@@ -2243,6 +2318,8 @@ class SegyGui(QMainWindow):
         progress.setValue(len(filenames))
         
         # Combine shapefiles if we have multiple files
+        combined_point_path = None
+        combined_line_path = None
         if len(all_point_shapefiles) > 1:
             try:
                 combined_point_path = os.path.join(output_dir, "SEGY_Combined_Nav_points.shp")
@@ -2254,8 +2331,10 @@ class SegyGui(QMainWindow):
         
         # Show completion message
         message = f"Batch processing complete!\n\nProcessed: {processed_count}\nErrors: {error_count}"
-        if len(all_point_shapefiles) > 1:
-            message += f"\n\nCombined shapefiles created in output directory."
+        if combined_point_path and combined_line_path:
+            point_name = os.path.basename(combined_point_path)
+            line_name = os.path.basename(combined_line_path)
+            message += f"\n\nCombined shapefiles created:\n  - {point_name}\n  - {line_name}"
         QMessageBox.information(self, "Batch Processing Complete", message)
         self.statusBar().showMessage(f"Batch processing complete: {processed_count} files processed, {error_count} errors")
     
@@ -2321,7 +2400,7 @@ class SegyGui(QMainWindow):
             df[k] = segyfile.attributes(v)[:]
         return df
     
-    def _save_plot_for_file(self, data, file_info, filename, colormap, clip_percentile, full_resolution):
+    def _save_plot_for_file(self, data, file_info, filename, colormap, clip_percentile, full_resolution, depth_mode=False, velocity=1500.0):
         """Save plot for a specific file"""
         # Calculate amplitude clipping
         vm = np.percentile(data, clip_percentile)
@@ -2331,7 +2410,20 @@ class SegyGui(QMainWindow):
         # Create extent
         n_traces = file_info['n_traces']
         twt = file_info['twt']
-        extent = [1, n_traces, twt[-1], twt[0]]
+        
+        # Convert TWT to depth if depth mode is enabled
+        if depth_mode:
+            # Convert TWT (ms) to depth (m): Depth = (TWT_ms / 1000) × Velocity_m/s / 2
+            depth = (twt / 1000.0) * velocity / 2.0
+            y_min = depth[-1]  # Last depth value (deepest)
+            y_max = depth[0]   # First depth value (shallowest)
+            y_label = 'Depth [m]'
+        else:
+            y_min = twt[-1]  # Last TWT value (deepest)
+            y_max = twt[0]   # First TWT value (shallowest)
+            y_label = 'TWT [ms]'
+        
+        extent = [1, n_traces, y_min, y_max]
         
         if full_resolution:
             # Calculate figure size based on data dimensions
@@ -2348,7 +2440,7 @@ class SegyGui(QMainWindow):
         
         # Add labels and title
         ax.set_xlabel('CDP number')
-        ax.set_ylabel('TWT [ms]')
+        ax.set_ylabel(y_label)
         title = f'{file_info["filename"]}'
         if full_resolution:
             title += ' (Full Resolution)'

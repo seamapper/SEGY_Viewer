@@ -186,11 +186,12 @@ UNH/CCOM-JHC
 
 ## License
 
-[Specify your license here]
+This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-Developed at the University of New Hampshire, Center for Coastal and Ocean Mapping - Joint Hydrographic Center (UNH/CCOM-JHC).
+Developed at the University of New Hampshire, Center for Coastal and Ocean Mapping - Joint Hydrographic Center (UNH/CCOM-JHC) under grant NA20NOS4000196 from the National Oceanic and Atmospheric Administration (NOAA).
+
 
 ## Support
 

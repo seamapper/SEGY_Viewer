@@ -1,4 +1,4 @@
-# SEGY Viewer
+# CCOM-UNH/JHC SEGY Viewer
 
 A Python application for viewing and processing SEGY seismic data files, developed at UNH/CCOM-JHC (University of New Hampshire, Center for Coastal and Ocean Mapping - Joint Hydrographic Center).
 
@@ -90,7 +90,7 @@ python segy_viewer.py
 ```
 
 **Windows executable:**
-Double-click `CCOM_SEGY_Viewer_v2025.06.exe` (or the latest version in the `dist/` directory)
+Double-click `CCOM_SEGY_Viewer_v2025.07.exe` (or the latest version in the `dist/` directory)
 
 ### Basic Workflow
 
@@ -127,6 +127,9 @@ Double-click `CCOM_SEGY_Viewer_v2025.06.exe` (or the latest version in the `dist
    - **Save Info**: Export header information to a text file
    - **Save Shapefile**: Export navigation coordinates as shapefiles
    - **Batch Process**: Process multiple files at once
+
+6. **About this Program**
+   - Click the "About this Program" button in the status bar to view program information, version, compilation date, author details, grant information, and license information
 
 ### Batch Processing
 
@@ -174,6 +177,7 @@ The application saves user preferences in `segy_config.json`:
 
 ## Version History
 
+- **v2025.07**: Added "About this Program" dialog accessible from status bar, displaying program information, version, compilation date, CCOM logo, author information, grant details, and BSD 3-Clause License information
 - **v2025.06**: GUI layout improvements - merged Trace Selection and Trace Information into single "Trace Info" panel, removed Header Control groupbox (headers always expanded), reorganized Plot Control groupbox with improved layout, moved Update Plot button to Plot Control section
 - **v2025.05**: Added batch processing, date/time fields in shapefiles, coordinate conversion improvements, zoom/pan navigation toolbar, middle-click trace selection, depth mode with velocity conversion, standard deviation clipping
 - **v2025.04**: Added ability to save full resolution plots and shapefiles

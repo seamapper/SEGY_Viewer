@@ -5,6 +5,7 @@ import re
 import os
 import json
 from pathlib import Path
+from datetime import datetime
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
@@ -16,9 +17,9 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QFileDialog, QTextEdit, 
                              QLabel, QSplitter, QMessageBox, QProgressBar,
                              QProgressDialog, QGroupBox, QGridLayout, QSpinBox, QDoubleSpinBox, QComboBox,
-                             QCheckBox, QLineEdit)
+                             QCheckBox, QLineEdit, QDialog)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QPixmap
 
 """
 UNH/CCOM-JHC SEG-Y File Viewer
@@ -27,10 +28,9 @@ A Python application to view SEGY files, .
 Program by Paul Johnson, pjohnson@ccom.unh.edu
 Date: 2025-09-12
 
-Center for Coastal and Ocean Mapping - Joint Hydrographic Center
-University of New Hampshire
+Center for Coastal and Ocean Mapping/Joint Hydrographic Center, University of New Hampshire
 
-This program was developed at the University of New Hampshire, Center for Coastal and Ocean Mapping - Joint Hydrographic Center (UNH/CCOM-JHC) under a grant NA20NOS4000196 from the National Oceanic and Atmospheric Administration (NOAA) to the University of New Hampshire.
+This program was developed at the University of New Hampshire, Center for Coastal and Ocean Mapping - Joint Hydrographic Center (UNH/CCOM-JHC) under the grant NA20NOS4000196 from the National Oceanic and Atmospheric Administration (NOAA).
 
 This software is released for general use under the BSD 3-Clause License.
 
@@ -38,7 +38,8 @@ This software is released for general use under the BSD 3-Clause License.
 
 # __version__ = "2025.04"  #Added ability to save full resolution plots and shapefiles
 # __version__ = "2025.05"  #Add batch processing of SEGY files
-__version__ = "2025.06"  # Changes to layout and batch mode
+# __version__ = "2025.06"  # Changes to layout and batch mode
+__version__ = "2025.07"  # Added license information and updated README.md
 
 class SegyConfig:
     """Configuration management for SEGY GUI settings"""
@@ -573,6 +574,12 @@ class SegyGui(QMainWindow):
         
         # Create status bar
         self.statusBar().showMessage('Ready - Select a SEGY file to begin')
+        
+        # Add About button to status bar
+        about_button = QPushButton("About this Program")
+        about_button.setMaximumHeight(25)
+        about_button.clicked.connect(self.show_about_dialog)
+        self.statusBar().addPermanentWidget(about_button)
         
     def create_controls_panel(self):
         """Create the controls panel with file selection and plot options"""
@@ -2450,6 +2457,114 @@ class SegyGui(QMainWindow):
             message += f"\n\nCombined shapefiles created:\n  - {point_name}\n  - {line_name}"
         QMessageBox.information(self, "Batch Processing Complete", message)
         self.statusBar().showMessage(f"Batch processing complete: {processed_count} files processed, {error_count} errors")
+    
+    def show_about_dialog(self):
+        """Show About dialog with program information"""
+        # Create dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("About SEGY Viewer")
+        dialog.setMinimumWidth(500)
+        dialog.setMinimumHeight(400)
+        
+        # Main layout
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Program name
+        program_name = QLabel(f"UNH/CCOM-JHC SEG-Y File Viewer v{__version__}")
+        program_name.setStyleSheet("font-size: 16pt; font-weight: bold;")
+        program_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(program_name)
+        
+        # Get compilation date
+        compile_date = "Unknown"
+        try:
+            if getattr(sys, 'frozen', False):
+                # Running as compiled exe
+                exe_path = sys.executable
+                if os.path.exists(exe_path):
+                    mod_time = os.path.getmtime(exe_path)
+                    compile_date = datetime.fromtimestamp(mod_time).strftime("%B %d, %Y")
+            else:
+                # Running as script - use script modification date
+                script_path = __file__
+                if os.path.exists(script_path):
+                    mod_time = os.path.getmtime(script_path)
+                    compile_date = datetime.fromtimestamp(mod_time).strftime("%B %d, %Y")
+        except Exception:
+            compile_date = "Unknown"
+        
+        # Compilation date
+        date_label = QLabel(f"Compiled: {compile_date}")
+        date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        date_label.setStyleSheet("font-size: 10pt; color: gray;")
+        layout.addWidget(date_label)
+        
+        # CCOM logo/image
+        logo_path = os.path.join(os.path.dirname(__file__), "media", "CCOM.png")
+        if os.path.exists(logo_path):
+            logo_label = QLabel()
+            pixmap = QPixmap(logo_path)
+            # Scale logo to reasonable size (max width 300px)
+            if pixmap.width() > 300:
+                pixmap = pixmap.scaledToWidth(300, Qt.TransformationMode.SmoothTransformation)
+            logo_label.setPixmap(pixmap)
+            logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(logo_label)
+        
+        # Author name
+        author_label = QLabel("Paul Johnson")
+        author_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        author_label.setStyleSheet("font-size: 12pt; font-weight: bold; margin-top: 10px;")
+        layout.addWidget(author_label)
+        
+        # Author email
+        email_label = QLabel("pjohnson@ccom.unh.edu")
+        email_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        email_label.setStyleSheet("font-size: 10pt; margin-top: 3px; color: #333;")
+        layout.addWidget(email_label)
+        
+        # Institution
+        institution_label = QLabel("Center for Coastal and Ocean Mapping/Joint Hydrographic Center, University of New Hampshire")
+        institution_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        institution_label.setWordWrap(True)
+        institution_label.setStyleSheet("font-size: 10pt; margin-top: 5px;")
+        layout.addWidget(institution_label)
+        
+        # Grant information
+        grant_text = ("This program was developed at the University of New Hampshire, "
+                     "Center for Coastal and Ocean Mapping - Joint Hydrographic Center "
+                     "(UNH/CCOM-JHC) under the grant NA20NOS4000196 from the National "
+                     "Oceanic and Atmospheric Administration (NOAA).")
+        grant_label = QLabel(grant_text)
+        grant_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        grant_label.setWordWrap(True)
+        grant_label.setStyleSheet("font-size: 9pt; margin-top: 15px; color: #555;")
+        layout.addWidget(grant_label)
+        
+        # License information
+        license_label = QLabel("This software is released for general use under the BSD 3-Clause License.")
+        license_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        license_label.setWordWrap(True)
+        license_label.setStyleSheet("font-size: 9pt; margin-top: 10px; color: #555;")
+        layout.addWidget(license_label)
+        
+        # Add stretch to push everything up
+        layout.addStretch()
+        
+        # OK button
+        ok_button = QPushButton("OK")
+        ok_button.setMaximumWidth(100)
+        ok_button.clicked.connect(dialog.accept)
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(ok_button)
+        button_layout.addStretch()
+        layout.addLayout(button_layout)
+        
+        # Show dialog
+        dialog.exec()
     
     def _load_segy_file_data(self, filename):
         """Load SEGY file data without updating GUI"""

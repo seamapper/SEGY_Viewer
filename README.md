@@ -70,6 +70,18 @@ Pre-built Windows executables can be downloaded from the [Releases](https://gith
 
 ## Usage
 
+### GUI Layout
+
+The application interface is organized into several main sections:
+
+- **File Control Panel** (top): Contains file operations buttons (Open SEGY File, Save Plot, Save Info, Save Shapefile, Batch Process) and file status information
+- **Plot Area** (left): Displays the seismic data visualization with navigation toolbar (zoom, pan, reset)
+- **Right Panel** (right, max width 490px): Contains multiple groupboxes:
+  - **Plot Control**: Display settings including Depth mode, Velocity, Clip/Standard Deviation options, Colormap selection, and Update Plot button
+  - **Header Information**: Displays binary headers (always expanded with descriptions), text headers, and clickable field names
+  - **Trace Info**: Combined panel with trace selection controls (Back/Forward buttons, CDP input, Go button, Byte Loc checkbox) and trace header information display
+  - **Field Description**: Shows detailed descriptions when clicking on header field names
+
 ### Running the Application
 
 **From source:**

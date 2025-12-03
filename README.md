@@ -63,7 +63,7 @@ pip install PyQt6 matplotlib numpy pandas segyio geopandas
 
 ### Windows Executable
 
-Pre-built Windows executables are available in the `dist/` directory. The executable is a single-file application that includes all dependencies.
+Pre-built Windows executables can be downloaded from the [Releases](https://github.com/seamapper/SEGY_Viewer/releases) area of this repository. The executable is a single-file application that includes all dependencies and does not require Python to be installed.
 
 ## Usage
 

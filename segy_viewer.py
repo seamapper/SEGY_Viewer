@@ -623,7 +623,16 @@ class SegyGui(QMainWindow):
         
         # Trace Selection panel
         selection_group = QGroupBox("Trace Selection")
-        selection_layout = QHBoxLayout(selection_group)
+        selection_layout = QVBoxLayout(selection_group)
+        
+        # Instruction text
+        instruction_label = QLabel("Middle Button click on plot to select trace")
+        instruction_label.setStyleSheet("color: gray; font-style: italic; font-size: 9pt;")
+        instruction_label.setMaximumHeight(20)
+        selection_layout.addWidget(instruction_label)
+        
+        # Controls layout
+        controls_layout = QHBoxLayout()
         
         # Back button
         self.trace_back_button = QPushButton("◀ Back")
@@ -631,19 +640,19 @@ class SegyGui(QMainWindow):
         self.trace_back_button.setMaximumWidth(60)
         self.trace_back_button.clicked.connect(self.trace_back)
         self.trace_back_button.setEnabled(False)
-        selection_layout.addWidget(self.trace_back_button)
+        controls_layout.addWidget(self.trace_back_button)
         
         # Trace number input
         trace_label = QLabel("CDP:")
         trace_label.setMaximumHeight(30)
-        selection_layout.addWidget(trace_label)
+        controls_layout.addWidget(trace_label)
         
         self.trace_number_input = QLineEdit()
         self.trace_number_input.setMaximumHeight(30)
         self.trace_number_input.setMaximumWidth(80)
         self.trace_number_input.setPlaceholderText("1")
         self.trace_number_input.returnPressed.connect(self.on_trace_number_entered)
-        selection_layout.addWidget(self.trace_number_input)
+        controls_layout.addWidget(self.trace_number_input)
         
         # Forward button
         self.trace_forward_button = QPushButton("Forward ▶")
@@ -651,7 +660,7 @@ class SegyGui(QMainWindow):
         self.trace_forward_button.setMaximumWidth(70)
         self.trace_forward_button.clicked.connect(self.trace_forward)
         self.trace_forward_button.setEnabled(False)
-        selection_layout.addWidget(self.trace_forward_button)
+        controls_layout.addWidget(self.trace_forward_button)
         
         # Go button
         self.trace_go_button = QPushButton("Go")
@@ -659,16 +668,17 @@ class SegyGui(QMainWindow):
         self.trace_go_button.setMaximumWidth(40)
         self.trace_go_button.clicked.connect(self.on_trace_number_entered)
         self.trace_go_button.setEnabled(False)
-        selection_layout.addWidget(self.trace_go_button)
+        controls_layout.addWidget(self.trace_go_button)
         
         # Byte location checkbox
         self.byte_loc_checkbox = QCheckBox("Byte Loc")
         self.byte_loc_checkbox.setMaximumHeight(30)
         self.byte_loc_checkbox.setChecked(False)  # Off by default
         self.byte_loc_checkbox.stateChanged.connect(self.on_byte_loc_changed)
-        selection_layout.addWidget(self.byte_loc_checkbox)
+        controls_layout.addWidget(self.byte_loc_checkbox)
         
-        selection_layout.addStretch()  # Add stretch to push buttons to the left
+        controls_layout.addStretch()  # Add stretch to push buttons to the left
+        selection_layout.addLayout(controls_layout)
         
         main_layout.addWidget(selection_group)
         

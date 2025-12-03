@@ -9,6 +9,8 @@ A Python application for viewing and processing SEGY seismic data files, develop
   - Adjustable amplitude clipping (clip percentile)
   - Full resolution plot export
   - Interactive trace selection and header information display
+  - Zoom and pan navigation tools for detailed plot inspection
+  - Middle mouse button click to select traces on the plot
 
 - **Header Information Display**
   - View binary headers with expandable descriptions
@@ -92,9 +94,16 @@ Double-click `CCOM_SEGY_Viewer_v2025.05.exe` (or the latest version in the `dist
 3. **View Header Information**
    - Binary headers, text headers, and trace information are displayed in the right panel
    - Click on field names to see descriptions
-   - Navigate between traces using the trace selection controls
+   - Navigate between traces using the trace selection controls or middle-click on the plot
+   - Use the navigation toolbar to zoom and pan around the plot for detailed inspection
 
-4. **Export Data**
+4. **Plot Navigation**
+   - **Zoom**: Click the zoom tool (magnifying glass) in the toolbar, then click and drag to zoom into a region, or use mouse wheel to zoom
+   - **Pan**: Click the pan tool (hand icon) in the toolbar, then click and drag to move around the plot
+   - **Reset View**: Click the home button to return to the original view
+   - **Trace Selection**: Middle-click (scroll wheel click) anywhere on the plot to select a trace and view its header information
+
+5. **Export Data**
    - **Save Plot**: Export the current plot as PNG
    - **Save Info**: Export header information to a text file
    - **Save Shapefile**: Export navigation coordinates as shapefiles
@@ -146,7 +155,7 @@ The application saves user preferences in `segy_config.json`:
 
 ## Version History
 
-- **v2025.05**: Added batch processing, date/time fields in shapefiles, coordinate conversion improvements
+- **v2025.05**: Added batch processing, date/time fields in shapefiles, coordinate conversion improvements, zoom/pan navigation toolbar, middle-click trace selection
 - **v2025.04**: Added ability to save full resolution plots and shapefiles
 
 ## Author

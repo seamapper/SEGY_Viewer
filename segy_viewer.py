@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import numpy as np
 import pandas as pd
@@ -265,8 +266,12 @@ class SegyPlotWidget(FigureCanvas):
         return vm, vm1
     
     def on_click(self, event):
-        """Handle mouse click events on the plot"""
-        if event.inaxes != self.ax or not self.data is not None:
+        """Handle mouse click events on the plot - middle button for trace selection"""
+        # Only process middle mouse button clicks (button 2) for trace selection
+        if event.button != 2:
+            return
+        
+        if event.inaxes != self.ax or self.data is None:
             return
         
         # Get the clicked coordinates
@@ -462,13 +467,25 @@ class SegyGui(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(splitter)
         
+        # Create plot widget container with toolbar
+        plot_container = QWidget()
+        plot_layout = QVBoxLayout(plot_container)
+        plot_layout.setContentsMargins(0, 0, 0, 0)
+        
         # Create plot widget
         self.plot_widget = SegyPlotWidget()
         self.plot_widget.set_trace_callback(self.on_trace_selected)
-        splitter.addWidget(self.plot_widget)
+        plot_layout.addWidget(self.plot_widget)
+        
+        # Create navigation toolbar for zoom and pan
+        self.plot_toolbar = NavigationToolbar(self.plot_widget, self)
+        plot_layout.addWidget(self.plot_toolbar)
+        
+        splitter.addWidget(plot_container)
         
         # Create headers panel
         headers_panel = self.create_headers_panel()
+        headers_panel.setMaximumWidth(490)  # Prevent headers panel from expanding beyond 490 pixels
         splitter.addWidget(headers_panel)
         
         # Set splitter proportions (65% plot, 35% headers) to accommodate both header panels

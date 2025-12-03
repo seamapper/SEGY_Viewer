@@ -549,6 +549,13 @@ class SegyGui(QMainWindow):
         self.full_res_checkbox.setMaximumHeight(30)
         layout.addWidget(self.full_res_checkbox)
         
+        # Save info button
+        self.save_info_button = QPushButton("Save Info")
+        self.save_info_button.clicked.connect(self.save_header_info)
+        self.save_info_button.setEnabled(False)
+        self.save_info_button.setMaximumHeight(30)
+        layout.addWidget(self.save_info_button)
+        
         # Save shapefile button
         self.save_shapefile_button = QPushButton("Save Shapefile")
         self.save_shapefile_button.clicked.connect(self.save_shapefile)
@@ -714,6 +721,7 @@ class SegyGui(QMainWindow):
         self.update_button.setEnabled(True)
         self.save_button.setEnabled(True)
         self.full_res_checkbox.setEnabled(True)
+        self.save_info_button.setEnabled(True)
         self.save_shapefile_button.setEnabled(True)
         
         # Remove progress bar
@@ -2077,6 +2085,42 @@ class SegyGui(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save shapefile:\n{str(e)}")
                 self.statusBar().showMessage("Shapefile export failed")
+    
+    def save_header_info(self):
+        """Save Header Information to a text file"""
+        if self.current_file_info is None or self.headers_text is None:
+            return
+        
+        # Get save directory using last saved directory
+        last_save_dir = self.config.get('last_save_directory', '')
+        save_dir = QFileDialog.getExistingDirectory(
+            self, "Select Directory to Save Header Information", last_save_dir
+        )
+        
+        if save_dir:
+            # Update last save directory
+            self.config.update_last_save_directory(save_dir)
+            
+            # Generate filename based on original SEGY file with .txt extension
+            base_name = Path(self.current_file_info['filename']).stem
+            txt_file_path = os.path.join(save_dir, f"{base_name}.txt")
+            
+            try:
+                # Get the header information content as plain text
+                header_content = self.headers_text.toPlainText()
+                
+                # Write to file
+                with open(txt_file_path, 'w', encoding='utf-8') as f:
+                    f.write(header_content)
+                
+                # Show success message
+                QMessageBox.information(self, "Success", 
+                    f"Header information saved to:\n{txt_file_path}")
+                self.statusBar().showMessage(f"Header information saved: {txt_file_path}")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save header information:\n{str(e)}")
+                self.statusBar().showMessage("Header information export failed")
     
     def _create_cdp_shapefile(self, shapefile_path):
         """Create both point and line shapefiles with CDP coordinates"""

@@ -11,17 +11,23 @@ import re
 from pathlib import Path
 
 def get_version_from_code():
-    """Extract version from segy_gui.py"""
+    """Extract version from segy_viewer.py"""
     try:
-        with open('segy_gui.py', 'r', encoding='utf-8') as f:
+        with open('segy_viewer.py', 'r', encoding='utf-8') as f:
             content = f.read()
         
-        # Look for __version__ = "version_string"
-        match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
-        if match:
-            return match.group(1)
-        else:
-            return "unknown"
+        # Look for __version__ = "version_string" (find the uncommented one)
+        # Match lines that are not commented out
+        lines = content.split('\n')
+        for line in lines:
+            stripped = line.strip()
+            # Skip commented lines
+            if stripped.startswith('#'):
+                continue
+            match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', stripped)
+            if match:
+                return match.group(1)
+        return "unknown"
     except Exception as e:
         print(f"Warning: Could not extract version: {e}")
         return "unknown"
@@ -29,13 +35,13 @@ def get_version_from_code():
 def update_spec_file(exe_name):
     """Update the spec file with the new executable name"""
     try:
-        with open('segy_gui.spec', 'r', encoding='utf-8') as f:
+        with open('segy_viewer.spec', 'r', encoding='utf-8') as f:
             content = f.read()
         
         # Replace the name in the EXE section
         content = re.sub(r"name='[^']*'", f"name='{exe_name}'", content)
         
-        with open('segy_gui.spec', 'w', encoding='utf-8') as f:
+        with open('segy_viewer.spec', 'w', encoding='utf-8') as f:
             f.write(content)
         
         print(f"✓ Updated spec file with name: {exe_name}")
@@ -56,26 +62,21 @@ def build_segy_gui():
     print("=" * 50)
     
     # Check if we're in the right directory
-    if not os.path.exists('segy_gui.py'):
-        print("Error: segy_gui.py not found. Please run this script from the SEGY directory.")
+    if not os.path.exists('segy_viewer.py'):
+        print("Error: segy_viewer.py not found. Please run this script from the SEGY directory.")
         return False
     
     # Check if spec file exists
-    if not os.path.exists('segy_gui.spec'):
-        print("Error: segy_gui.spec not found.")
+    if not os.path.exists('segy_viewer.spec'):
+        print("Error: segy_viewer.spec not found.")
         return False
     
-    # Convert PNG to ICO if needed
-    if not os.path.exists('CCOM.ico'):
-        print("Converting CCOM.png to CCOM.ico...")
-        try:
-            from convert_icon import convert_png_to_ico
-            if not convert_png_to_ico():
-                print("Warning: Failed to convert icon. Building without custom icon.")
-        except Exception as e:
-            print(f"Warning: Could not convert icon: {e}. Building without custom icon.")
+    # Check if icon file exists
+    icon_path = 'media/CCOM.ico'
+    if not os.path.exists(icon_path):
+        print(f"Warning: Icon file {icon_path} not found. Building without custom icon.")
     else:
-        print("✓ Icon file CCOM.ico found")
+        print(f"✓ Icon file {icon_path} found")
     
     try:
         # Clean previous builds
@@ -90,7 +91,7 @@ def build_segy_gui():
         
         # Run PyInstaller
         print("Running PyInstaller...")
-        cmd = [sys.executable, '-m', 'PyInstaller', '--clean', 'segy_gui.spec']
+        cmd = [sys.executable, '-m', 'PyInstaller', '--clean', 'segy_viewer.spec']
         
         result = subprocess.run(cmd, capture_output=True, text=True)
         

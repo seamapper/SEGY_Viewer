@@ -25,6 +25,8 @@ from PyQt6.QtGui import QFont, QPixmap
 UNH/CCOM-JHC SEG-Y File Viewer
 A Python application to view SEGY files, .
 
+![Example Plot](media/SEGY_Viewer.jpg)
+
 Program by Paul Johnson, pjohnson@ccom.unh.edu
 Date: 2025-09-12
 

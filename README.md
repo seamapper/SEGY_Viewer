@@ -1,8 +1,7 @@
 # CCOM-UNH/JHC SEGY Viewer
 
-A Python application for viewing and processing SEGY seismic data files, developed at UNH/CCOM-JHC (University of New Hampshire, Center for Coastal and Ocean Mapping - Joint Hydrographic Center).
-
 ![Example Plot](media/SEGY_Viewer.jpg)
+A Python application for viewing SEGY seismic data files, developed at the Center for Coastal and Ocean Mapping/Joint Hydrographic Center at the University of New Hampshire, .
 
 ## Features
 

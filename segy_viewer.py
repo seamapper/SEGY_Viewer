@@ -15,7 +15,7 @@ import segyio
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QFileDialog, QTextEdit, 
                              QLabel, QSplitter, QMessageBox, QProgressBar,
-                             QProgressDialog, QGroupBox, QGridLayout, QSpinBox, QComboBox,
+                             QProgressDialog, QGroupBox, QGridLayout, QSpinBox, QDoubleSpinBox, QComboBox,
                              QCheckBox, QLineEdit)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -29,7 +29,8 @@ Date: 2025-09-12
 """
 
 # __version__ = "2025.04"  #Added ability to save full resolution plots and shapefiles
-__version__ = "2025.05"  #Add batch processing of SEGY files
+# __version__ = "2025.05"  #Add batch processing of SEGY files
+__version__ = "2025.06"  # Changes to layout and batch mode
 
 class SegyConfig:
     """Configuration management for SEGY GUI settings"""
@@ -226,7 +227,7 @@ class SegyPlotWidget(FigureCanvas):
         # Connect mouse click event
         self.mpl_connect('button_press_event', self.on_click)
         
-    def plot_segy_data(self, data, file_info, trace_headers=None, clip_percentile=99, colormap='BuPu', depth_mode=False, velocity=1500.0):
+    def plot_segy_data(self, data, file_info, trace_headers=None, clip_percentile=99, colormap='BuPu', depth_mode=False, velocity=1500.0, clip_enabled=True, std_dev_enabled=False, std_dev_value=2.0):
         """Plot SEGY data"""
         self.data = data
         self.file_info = file_info
@@ -238,10 +239,21 @@ class SegyPlotWidget(FigureCanvas):
         self.colorbar = None
         self.selected_trace_line = None
         
+        # Apply standard deviation clipping if enabled
+        plot_data = data.copy()
+        if std_dev_enabled:
+            plot_data = self._apply_std_dev_clipping(plot_data, std_dev_value)
+        
         # Calculate amplitude clipping
-        vm = np.percentile(data, clip_percentile)
-        vm0 = 0
-        vm1 = vm
+        if clip_enabled:
+            vm = np.percentile(plot_data, clip_percentile)
+            vm0 = 0
+            vm1 = vm
+        else:
+            # No clipping - use full data range
+            vm0 = plot_data.min()
+            vm1 = plot_data.max()
+            vm = vm1  # Set vm for return value
         
         # Create extent for proper axis labeling
         n_traces = file_info['n_traces']
@@ -262,7 +274,7 @@ class SegyPlotWidget(FigureCanvas):
         extent = [1, n_traces, y_min, y_max]
         
         # Plot the data
-        im = self.ax.imshow(data.T, cmap=colormap, vmin=vm0, vmax=vm1, 
+        im = self.ax.imshow(plot_data.T, cmap=colormap, vmin=vm0, vmax=vm1, 
                            aspect='auto', extent=extent)
         
         # Set labels and title
@@ -274,12 +286,27 @@ class SegyPlotWidget(FigureCanvas):
         self.colorbar = self.fig.colorbar(im, ax=self.ax, label='Amplitude', pad=0.02)
         
         # Reduce plot margins to maximize plot area
-        self.fig.subplots_adjust(left=0.08, bottom=0.10, right=0.97, top=0.95)
+        self.fig.subplots_adjust(left=0.08, bottom=0.10, right=1.00, top=0.95)
         
         # Refresh the canvas
         self.draw()
         
         return vm, vm1
+    
+    def _apply_std_dev_clipping(self, data, std_dev_value):
+        """Apply standard deviation clipping to the data"""
+        # Calculate mean and standard deviation
+        mean = np.mean(data)
+        std = np.std(data)
+        
+        # Calculate clipping limits: mean ± (std_dev_value * std)
+        lower_limit = mean - (std_dev_value * std)
+        upper_limit = mean + (std_dev_value * std)
+        
+        # Clip the data to these limits
+        clipped_data = np.clip(data, lower_limit, upper_limit)
+        
+        return clipped_data
     
     def on_click(self, event):
         """Handle mouse click events on the plot - middle button for trace selection"""
@@ -344,11 +371,24 @@ class SegyPlotWidget(FigureCanvas):
                 colormap = main_window.colormap_combo.currentText()
                 depth_mode = main_window.depth_mode_checkbox.isChecked()
                 velocity = main_window.velocity_spinbox.value()
+                clip_enabled = main_window.clip_checkbox.isChecked()
+                std_dev_enabled = main_window.std_dev_checkbox.isChecked()
+                std_dev_value = main_window.std_dev_spinbox.value()
+                
+                # Apply standard deviation clipping if enabled
+                plot_data = self.data.copy()
+                if std_dev_enabled:
+                    plot_data = self._apply_std_dev_clipping(plot_data, std_dev_value)
                 
                 # Calculate amplitude clipping (same as interactive plot)
-                vm = np.percentile(self.data, clip_percentile)
-                vm0 = 0
-                vm1 = vm
+                if clip_enabled:
+                    vm = np.percentile(plot_data, clip_percentile)
+                    vm0 = 0
+                    vm1 = vm
+                else:
+                    # No clipping - use full data range
+                    vm0 = plot_data.min()
+                    vm1 = plot_data.max()
                 
                 # Create extent for proper axis labeling (same as interactive plot)
                 n_traces = self.file_info['n_traces']
@@ -378,7 +418,7 @@ class SegyPlotWidget(FigureCanvas):
                 fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=300)
                 
                 # Plot the full data with same settings as interactive plot
-                im = ax.imshow(self.data.T, cmap=colormap, vmin=vm0, vmax=vm1, 
+                im = ax.imshow(plot_data.T, cmap=colormap, vmin=vm0, vmax=vm1, 
                               aspect='auto', extent=extent)
                 
                 # Add labels and title (same as interactive plot)
@@ -477,7 +517,6 @@ class SegyGui(QMainWindow):
         self.current_file_info = None
         self.current_trace_number = 1  # Track current selected trace
         self.show_byte_locations = False  # Track byte location display state
-        self.show_binary_descriptions = True  # Track binary header description display state
         self.depth_mode = False  # Track if depth mode is enabled
         self.velocity = 1500.0  # Default velocity in m/s
         self.init_ui()
@@ -529,7 +568,7 @@ class SegyGui(QMainWindow):
         
     def create_controls_panel(self):
         """Create the controls panel with file selection and plot options"""
-        group = QGroupBox("Controls")
+        group = QGroupBox("File Control")
         group.setMaximumHeight(80)  # Limit the height of the controls panel
         layout = QHBoxLayout(group)
         layout.setContentsMargins(10, 5, 10, 5)  # Reduce margins for more compact layout
@@ -547,64 +586,6 @@ class SegyGui(QMainWindow):
         layout.addWidget(self.file_label)
         
         layout.addStretch()
-        
-        # Depth mode toggle (enabled from start for batch processing)
-        self.depth_mode_checkbox = QCheckBox("Depth")
-        self.depth_mode_checkbox.setMaximumHeight(30)
-        self.depth_mode_checkbox.setChecked(False)
-        self.depth_mode_checkbox.stateChanged.connect(self.on_depth_mode_changed)
-        layout.addWidget(self.depth_mode_checkbox)
-        
-        # Velocity parameter (enabled from start for batch processing)
-        velocity_label = QLabel("Velocity (m/s):")
-        velocity_label.setMaximumHeight(30)
-        layout.addWidget(velocity_label)
-        
-        self.velocity_spinbox = QSpinBox()
-        self.velocity_spinbox.setRange(1000, 5000)
-        self.velocity_spinbox.setValue(1500)
-        self.velocity_spinbox.setMaximumHeight(30)
-        self.velocity_spinbox.setMaximumWidth(80)
-        self.velocity_spinbox.valueChanged.connect(self.on_velocity_changed)
-        layout.addWidget(self.velocity_spinbox)
-        
-        # Plot options
-        clip_label = QLabel("Clip %:")
-        clip_label.setMaximumHeight(30)
-        layout.addWidget(clip_label)
-        
-        self.clip_spinbox = QSpinBox()
-        self.clip_spinbox.setRange(50, 100)
-        self.clip_spinbox.setValue(self.config.get('last_clip_percentile', 99))
-        self.clip_spinbox.setMaximumHeight(30)
-        self.clip_spinbox.setMaximumWidth(60)
-        # Connect clip percentile change to automatic plot update
-        self.clip_spinbox.valueChanged.connect(self.on_clip_percentile_changed)
-        layout.addWidget(self.clip_spinbox)
-        
-        colormap_label = QLabel("Colormap:")
-        colormap_label.setMaximumHeight(30)
-        layout.addWidget(colormap_label)
-        
-        self.colormap_combo = QComboBox()
-        self.colormap_combo.addItems(['BuPu', 'RdBu', 'seismic', 'gray', 'viridis', 'plasma'])
-        self.colormap_combo.setMaximumHeight(30)
-        self.colormap_combo.setMaximumWidth(100)
-        # Set the saved colormap
-        saved_colormap = self.config.get('last_colormap', 'BuPu')
-        index = self.colormap_combo.findText(saved_colormap)
-        if index >= 0:
-            self.colormap_combo.setCurrentIndex(index)
-        # Connect colormap change to automatic plot update
-        self.colormap_combo.currentTextChanged.connect(self.on_colormap_changed)
-        layout.addWidget(self.colormap_combo)
-        
-        # Update plot button
-        self.update_button = QPushButton("Update Plot")
-        self.update_button.clicked.connect(self.update_plot)
-        self.update_button.setEnabled(False)
-        self.update_button.setMaximumHeight(30)
-        layout.addWidget(self.update_button)
         
         # Save plot button
         self.save_button = QPushButton("Save Plot")
@@ -648,20 +629,116 @@ class SegyGui(QMainWindow):
         main_widget = QWidget()
         main_layout = QVBoxLayout(main_widget)
         
-        # Header Control panel
-        control_group = QGroupBox("Header Control")
-        control_layout = QHBoxLayout(control_group)
+        # Plot Control panel
+        plot_control_group = QGroupBox("Plot Control")
+        plot_control_layout = QVBoxLayout(plot_control_group)
         
-        # Binary header descriptions checkbox
-        self.binary_desc_checkbox = QCheckBox("Expand Header")
-        self.binary_desc_checkbox.setMaximumHeight(30)
-        self.binary_desc_checkbox.setChecked(True)  # On by default
-        self.binary_desc_checkbox.stateChanged.connect(self.on_binary_desc_changed)
-        control_layout.addWidget(self.binary_desc_checkbox)
+        # First row: Depth and Velocity
+        row1_layout = QHBoxLayout()
         
-        control_layout.addStretch()  # Add stretch to push controls to the left
+        # Depth mode toggle (enabled from start for batch processing)
+        self.depth_mode_checkbox = QCheckBox("Depth")
+        self.depth_mode_checkbox.setMaximumHeight(30)
+        self.depth_mode_checkbox.setChecked(False)
+        self.depth_mode_checkbox.stateChanged.connect(self.on_depth_mode_changed)
+        row1_layout.addWidget(self.depth_mode_checkbox)
         
-        main_layout.addWidget(control_group)
+        # Velocity parameter (enabled from start for batch processing)
+        velocity_label = QLabel("Velocity (m/s):")
+        velocity_label.setMaximumHeight(30)
+        row1_layout.addWidget(velocity_label)
+        
+        self.velocity_spinbox = QSpinBox()
+        self.velocity_spinbox.setRange(1000, 5000)
+        self.velocity_spinbox.setValue(1500)
+        self.velocity_spinbox.setMaximumHeight(30)
+        self.velocity_spinbox.setMaximumWidth(80)
+        self.velocity_spinbox.valueChanged.connect(self.on_velocity_changed)
+        row1_layout.addWidget(self.velocity_spinbox)
+        
+        row1_layout.addStretch()  # Add stretch to push controls to the left
+        plot_control_layout.addLayout(row1_layout)
+        
+        # Second row: Clip checkbox and Percent (%)
+        row2_layout = QHBoxLayout()
+        
+        # Clip checkbox
+        self.clip_checkbox = QCheckBox("Clip")
+        self.clip_checkbox.setMaximumHeight(30)
+        self.clip_checkbox.setChecked(True)  # On by default
+        self.clip_checkbox.stateChanged.connect(self.on_clip_enabled_changed)
+        row2_layout.addWidget(self.clip_checkbox)
+        
+        # Clip % parameter
+        clip_label = QLabel("%:")
+        clip_label.setMaximumHeight(30)
+        row2_layout.addWidget(clip_label)
+        
+        self.clip_spinbox = QSpinBox()
+        self.clip_spinbox.setRange(50, 100)
+        self.clip_spinbox.setValue(self.config.get('last_clip_percentile', 99))
+        self.clip_spinbox.setMaximumHeight(30)
+        self.clip_spinbox.setMaximumWidth(60)
+        # Connect clip percentile change to automatic plot update
+        self.clip_spinbox.valueChanged.connect(self.on_clip_percentile_changed)
+        row2_layout.addWidget(self.clip_spinbox)
+        
+        # Standard Deviation checkbox and parameter
+        self.std_dev_checkbox = QCheckBox("Standard Deviation")
+        self.std_dev_checkbox.setMaximumHeight(30)
+        self.std_dev_checkbox.setChecked(False)  # Off by default
+        self.std_dev_checkbox.stateChanged.connect(self.on_std_dev_enabled_changed)
+        row2_layout.addWidget(self.std_dev_checkbox)
+        
+        std_dev_label = QLabel("Value:")
+        std_dev_label.setMaximumHeight(30)
+        row2_layout.addWidget(std_dev_label)
+        
+        self.std_dev_spinbox = QDoubleSpinBox()
+        self.std_dev_spinbox.setRange(0.1, 10.0)
+        self.std_dev_spinbox.setValue(2.0)
+        self.std_dev_spinbox.setSingleStep(0.1)
+        self.std_dev_spinbox.setDecimals(1)
+        self.std_dev_spinbox.setMaximumHeight(30)
+        self.std_dev_spinbox.setMaximumWidth(60)
+        self.std_dev_spinbox.valueChanged.connect(self.on_std_dev_changed)
+        row2_layout.addWidget(self.std_dev_spinbox)
+        
+        row2_layout.addStretch()  # Add stretch to push controls to the left
+        plot_control_layout.addLayout(row2_layout)
+        
+        # Third row: Colormap
+        row3_layout = QHBoxLayout()
+        
+        # Colormap parameter
+        colormap_label = QLabel("Colormap:")
+        colormap_label.setMaximumHeight(30)
+        row3_layout.addWidget(colormap_label)
+        
+        self.colormap_combo = QComboBox()
+        self.colormap_combo.addItems(['BuPu', 'RdBu', 'seismic', 'gray', 'viridis', 'plasma'])
+        self.colormap_combo.setMaximumHeight(30)
+        self.colormap_combo.setMaximumWidth(100)
+        # Set the saved colormap
+        saved_colormap = self.config.get('last_colormap', 'BuPu')
+        index = self.colormap_combo.findText(saved_colormap)
+        if index >= 0:
+            self.colormap_combo.setCurrentIndex(index)
+        # Connect colormap change to automatic plot update
+        self.colormap_combo.currentTextChanged.connect(self.on_colormap_changed)
+        row3_layout.addWidget(self.colormap_combo)
+        
+        # Update plot button
+        self.update_button = QPushButton("Update Plot")
+        self.update_button.setMaximumHeight(30)
+        self.update_button.clicked.connect(self.update_plot)
+        self.update_button.setEnabled(False)  # Disabled until file is loaded
+        row3_layout.addWidget(self.update_button)
+        
+        row3_layout.addStretch()  # Add stretch to push controls to the left
+        plot_control_layout.addLayout(row3_layout)
+        
+        main_layout.addWidget(plot_control_group)
         
         # Header Information panel
         header_group = QGroupBox("Header Information")
@@ -674,15 +751,16 @@ class SegyGui(QMainWindow):
         
         main_layout.addWidget(header_group)
         
-        # Trace Selection panel
-        selection_group = QGroupBox("Trace Selection")
-        selection_layout = QVBoxLayout(selection_group)
+        # Trace Info panel (merged Trace Selection and Trace Information)
+        trace_info_group = QGroupBox("Trace Info")
+        trace_info_layout = QVBoxLayout(trace_info_group)
         
+        # Trace Selection controls (top section)
         # Instruction text
         instruction_label = QLabel("Middle Button click on plot to select trace")
         instruction_label.setStyleSheet("color: gray; font-style: italic; font-size: 9pt;")
         instruction_label.setMaximumHeight(20)
-        selection_layout.addWidget(instruction_label)
+        trace_info_layout.addWidget(instruction_label)
         
         # Controls layout
         controls_layout = QHBoxLayout()
@@ -731,21 +809,16 @@ class SegyGui(QMainWindow):
         controls_layout.addWidget(self.byte_loc_checkbox)
         
         controls_layout.addStretch()  # Add stretch to push buttons to the left
-        selection_layout.addLayout(controls_layout)
+        trace_info_layout.addLayout(controls_layout)
         
-        main_layout.addWidget(selection_group)
-        
-        # Trace Information panel
-        trace_group = QGroupBox("Trace Information")
-        trace_layout = QVBoxLayout(trace_group)
-        
+        # Trace Information (bottom section)
         self.trace_info_text = ClickableTextEdit(self)
         self.trace_info_text.setReadOnly(True)
         self.trace_info_text.setFont(QFont("Courier", 9))
         self.trace_info_text.setPlaceholderText("Click on the plot to view trace header information...")
-        trace_layout.addWidget(self.trace_info_text)
+        trace_info_layout.addWidget(self.trace_info_text)
         
-        main_layout.addWidget(trace_group)
+        main_layout.addWidget(trace_info_group)
         
         # Status area for field descriptions
         status_group = QGroupBox("Field Description")
@@ -888,9 +961,9 @@ class SegyGui(QMainWindow):
             self.display_trace_info(self.current_trace_number)
     
     def on_binary_desc_changed(self, state):
-        """Handle binary header descriptions checkbox state change"""
-        self.show_binary_descriptions = state == Qt.CheckState.Checked.value
-        # Refresh the headers display if data is loaded
+        """Handle binary header descriptions checkbox state change - DEPRECATED: Headers are always expanded now"""
+        # This method is kept for compatibility but no longer needed
+        # Headers are always expanded
         if self.current_data is not None:
             self.update_headers_display()
     
@@ -2022,24 +2095,19 @@ class SegyGui(QMainWindow):
                               'ExtSamplesOriginal', 'ExtEnsembleFold', 'SEGYRevision', 
                               'SEGYRevisionMinor', 'TraceFlag', 'ExtendedHeaders']
             
+            # Always show descriptions (headers are always expanded)
             if field_name in clickable_fields:
-                if self.show_binary_descriptions:
-                    # Try to decode the value
-                    description = self.decode_binary_header_value(key, value)
-                    if description:
-                        info_text += f"<span style='text-decoration: underline; cursor: pointer;'>{field_name}</span>: {value} ({description})<br>"
-                    else:
-                        info_text += f"<span style='text-decoration: underline; cursor: pointer;'>{field_name}</span>: {value}<br>"
+                # Try to decode the value
+                description = self.decode_binary_header_value(key, value)
+                if description:
+                    info_text += f"<span style='text-decoration: underline; cursor: pointer;'>{field_name}</span>: {value} ({description})<br>"
                 else:
                     info_text += f"<span style='text-decoration: underline; cursor: pointer;'>{field_name}</span>: {value}<br>"
             else:
-                if self.show_binary_descriptions:
-                    # Try to decode the value
-                    description = self.decode_binary_header_value(key, value)
-                    if description:
-                        info_text += f"{field_name}: {value} ({description})<br>"
-                    else:
-                        info_text += f"{field_name}: {value}<br>"
+                # Try to decode the value
+                description = self.decode_binary_header_value(key, value)
+                if description:
+                    info_text += f"{field_name}: {value} ({description})<br>"
                 else:
                     info_text += f"{field_name}: {value}<br>"
         info_text += "<br>"
@@ -2060,6 +2128,34 @@ class SegyGui(QMainWindow):
             self.config.update_colormap(colormap)
             # Automatically update the plot
             self.update_plot()
+    
+    def on_clip_enabled_changed(self, state):
+        """Handle clip checkbox change - automatically update plot if data is loaded"""
+        # If Clip is checked, uncheck Standard Deviation
+        if self.clip_checkbox.isChecked():
+            self.std_dev_checkbox.setChecked(False)
+        
+        if self.current_data is not None and self.current_file_info is not None:
+            # Automatically update the plot
+            self.update_plot()
+    
+    def on_std_dev_enabled_changed(self, state):
+        """Handle standard deviation checkbox change - automatically update plot if data is loaded"""
+        # If Standard Deviation is checked, uncheck the Clip checkbox
+        if self.std_dev_checkbox.isChecked():
+            self.clip_checkbox.setChecked(False)
+        
+        if self.current_data is not None and self.current_file_info is not None:
+            # Automatically update the plot
+            self.update_plot()
+    
+    def on_std_dev_changed(self, value):
+        """Handle standard deviation value change - automatically update plot if data is loaded"""
+        if self.current_data is not None and self.current_file_info is not None:
+            # Only update if standard deviation is enabled
+            if self.std_dev_checkbox.isChecked():
+                # Automatically update the plot
+                self.update_plot()
     
     def on_clip_percentile_changed(self, percentile):
         """Handle clip percentile change - automatically update plot if data is loaded"""
@@ -2090,6 +2186,9 @@ class SegyGui(QMainWindow):
             colormap = self.colormap_combo.currentText()
             depth_mode = self.depth_mode_checkbox.isChecked()
             velocity = self.velocity_spinbox.value()
+            clip_enabled = self.clip_checkbox.isChecked()
+            std_dev_enabled = self.std_dev_checkbox.isChecked()
+            std_dev_value = self.std_dev_spinbox.value()
             
             # Save current settings
             self.config.update_clip_percentile(clip_percentile)
@@ -2106,7 +2205,10 @@ class SegyGui(QMainWindow):
                 clip_percentile, 
                 colormap,
                 depth_mode,
-                velocity
+                velocity,
+                clip_enabled,
+                std_dev_enabled,
+                std_dev_value
             )
             
             self.statusBar().showMessage(
@@ -2261,6 +2363,9 @@ class SegyGui(QMainWindow):
         full_resolution = self.full_res_checkbox.isChecked()
         depth_mode = self.depth_mode_checkbox.isChecked()
         velocity = self.velocity_spinbox.value()
+        clip_enabled = self.clip_checkbox.isChecked()
+        std_dev_enabled = self.std_dev_checkbox.isChecked()
+        std_dev_value = self.std_dev_spinbox.value()
         
         # Create progress dialog
         progress = QProgressDialog("Processing files...", "Cancel", 0, len(filenames), self)
@@ -2294,7 +2399,7 @@ class SegyGui(QMainWindow):
                 
                 # Save plot
                 plot_path = os.path.join(output_dir, f"{base_name}_plot.png")
-                self._save_plot_for_file(data, file_info, plot_path, colormap, clip_percentile, full_resolution, depth_mode, velocity)
+                self._save_plot_for_file(data, file_info, plot_path, colormap, clip_percentile, full_resolution, depth_mode, velocity, clip_enabled, std_dev_enabled, std_dev_value)
                 
                 # Save shapefile
                 shapefile_base = os.path.join(output_dir, f"{base_name}_source_points")
@@ -2400,12 +2505,22 @@ class SegyGui(QMainWindow):
             df[k] = segyfile.attributes(v)[:]
         return df
     
-    def _save_plot_for_file(self, data, file_info, filename, colormap, clip_percentile, full_resolution, depth_mode=False, velocity=1500.0):
+    def _save_plot_for_file(self, data, file_info, filename, colormap, clip_percentile, full_resolution, depth_mode=False, velocity=1500.0, clip_enabled=True, std_dev_enabled=False, std_dev_value=2.0):
         """Save plot for a specific file"""
+        # Apply standard deviation clipping if enabled
+        plot_data = data.copy()
+        if std_dev_enabled:
+            plot_data = self.plot_widget._apply_std_dev_clipping(plot_data, std_dev_value)
+        
         # Calculate amplitude clipping
-        vm = np.percentile(data, clip_percentile)
-        vm0 = 0
-        vm1 = vm
+        if clip_enabled:
+            vm = np.percentile(plot_data, clip_percentile)
+            vm0 = 0
+            vm1 = vm
+        else:
+            # No clipping - use full data range
+            vm0 = plot_data.min()
+            vm1 = plot_data.max()
         
         # Create extent
         n_traces = file_info['n_traces']
@@ -2435,7 +2550,7 @@ class SegyGui(QMainWindow):
             fig, ax = plt.subplots(figsize=(12, 6), dpi=300)
         
         # Plot the data
-        im = ax.imshow(data.T, cmap=colormap, vmin=vm0, vmax=vm1, 
+        im = ax.imshow(plot_data.T, cmap=colormap, vmin=vm0, vmax=vm1, 
                       aspect='auto', extent=extent)
         
         # Add labels and title

@@ -6,14 +6,15 @@ A Python application for viewing and processing SEGY seismic data files, develop
 
 - **Interactive SEGY File Viewing**
   - Load and display SEGY seismic data with customizable colormaps
-  - Adjustable amplitude clipping (clip percentile)
+  - Adjustable amplitude clipping (clip percentile) or standard deviation clipping
+  - Depth mode with configurable velocity for TWT to depth conversion
   - Full resolution plot export
   - Interactive trace selection and header information display
   - Zoom and pan navigation tools for detailed plot inspection
   - Middle mouse button click to select traces on the plot
 
 - **Header Information Display**
-  - View binary headers with expandable descriptions
+  - View binary headers with expanded descriptions (always shown)
   - Display text headers
   - Trace header information with clickable field names
   - Field descriptions for trace header values
@@ -77,7 +78,7 @@ python segy_viewer.py
 ```
 
 **Windows executable:**
-Double-click `CCOM_SEGY_Viewer_v2025.05.exe` (or the latest version in the `dist/` directory)
+Double-click `CCOM_SEGY_Viewer_v2025.06.exe` (or the latest version in the `dist/` directory)
 
 ### Basic Workflow
 
@@ -87,21 +88,27 @@ Double-click `CCOM_SEGY_Viewer_v2025.05.exe` (or the latest version in the `dist
    - The file will load and display automatically
 
 2. **Adjust Display Settings**
-   - **Clip %**: Adjust amplitude clipping (default: 99%)
+   - **Depth**: Toggle to display depth in meters instead of TWT (Two-Way Travel Time)
+   - **Velocity (m/s)**: Set velocity for depth conversion (default: 1500 m/s)
+   - **Clip**: Toggle amplitude clipping on/off
+   - **%**: Adjust clip percentile when clipping is enabled (default: 99%)
+   - **Standard Deviation**: Toggle standard deviation clipping (mutually exclusive with Clip)
+   - **Value**: Set standard deviation multiplier (default: 2.0)
    - **Colormap**: Select from available colormaps (BuPu, RdBu, seismic, gray, viridis, plasma)
-   - Click "Update Plot" to apply changes
+   - Click "Update Plot" to apply changes (or changes apply automatically in most cases)
 
 3. **View Header Information**
    - Binary headers, text headers, and trace information are displayed in the right panel
+   - Binary header descriptions are always expanded and shown
    - Click on field names to see descriptions
-   - Navigate between traces using the trace selection controls or middle-click on the plot
+   - Navigate between traces using the trace selection controls in the "Trace Info" panel or middle-click on the plot
    - Use the navigation toolbar to zoom and pan around the plot for detailed inspection
 
 4. **Plot Navigation**
    - **Zoom**: Click the zoom tool (magnifying glass) in the toolbar, then click and drag to zoom into a region, or use mouse wheel to zoom
    - **Pan**: Click the pan tool (hand icon) in the toolbar, then click and drag to move around the plot
    - **Reset View**: Click the home button to return to the original view
-   - **Trace Selection**: Middle-click (scroll wheel click) anywhere on the plot to select a trace and view its header information
+   - **Trace Selection**: Middle-click (scroll wheel click) anywhere on the plot to select a trace and view its header information in the "Trace Info" panel
 
 5. **Export Data**
    - **Save Plot**: Export the current plot as PNG
@@ -155,7 +162,8 @@ The application saves user preferences in `segy_config.json`:
 
 ## Version History
 
-- **v2025.05**: Added batch processing, date/time fields in shapefiles, coordinate conversion improvements, zoom/pan navigation toolbar, middle-click trace selection
+- **v2025.06**: GUI layout improvements - merged Trace Selection and Trace Information into single "Trace Info" panel, removed Header Control groupbox (headers always expanded), reorganized Plot Control groupbox with improved layout, moved Update Plot button to Plot Control section
+- **v2025.05**: Added batch processing, date/time fields in shapefiles, coordinate conversion improvements, zoom/pan navigation toolbar, middle-click trace selection, depth mode with velocity conversion, standard deviation clipping
 - **v2025.04**: Added ability to save full resolution plots and shapefiles
 
 ## Author

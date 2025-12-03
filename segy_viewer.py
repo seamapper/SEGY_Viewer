@@ -26,6 +26,14 @@ A Python application to view SEGY files, .
 
 Program by Paul Johnson, pjohnson@ccom.unh.edu
 Date: 2025-09-12
+
+Center for Coastal and Ocean Mapping - Joint Hydrographic Center
+University of New Hampshire
+
+This program was developed at the University of New Hampshire, Center for Coastal and Ocean Mapping - Joint Hydrographic Center (UNH/CCOM-JHC) under a grant NA20NOS4000196 from the National Oceanic and Atmospheric Administration (NOAA) to the University of New Hampshire.
+
+This software is released for general use under the BSD 3-Clause License.
+
 """
 
 # __version__ = "2025.04"  #Added ability to save full resolution plots and shapefiles

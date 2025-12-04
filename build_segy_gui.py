@@ -83,8 +83,24 @@ def build_segy_gui():
         print("Cleaning previous builds...")
         if os.path.exists('build'):
             shutil.rmtree('build')
+        # Try to clean dist, but if exe is locked, just try to delete the exe file
         if os.path.exists('dist'):
-            shutil.rmtree('dist')
+            exe_path = os.path.join('dist', f'{exe_name}.exe')
+            if os.path.exists(exe_path):
+                try:
+                    os.remove(exe_path)
+                except PermissionError:
+                    print(f"Warning: {exe_name}.exe is locked (may be running). PyInstaller will attempt to overwrite it.")
+            # Remove other files in dist if they exist
+            try:
+                for item in os.listdir('dist'):
+                    item_path = os.path.join('dist', item)
+                    if os.path.isfile(item_path) and item != f'{exe_name}.exe':
+                        os.remove(item_path)
+                    elif os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+            except Exception:
+                pass  # Continue even if cleanup fails
         
         # Update spec file with version
         update_spec_file(exe_name)

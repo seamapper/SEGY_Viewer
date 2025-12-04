@@ -43,6 +43,15 @@ This software is released for general use under the BSD 3-Clause License.
 # __version__ = "2025.06"  # Changes to layout and batch mode
 __version__ = "2025.07"  # Added license information and updated README.md
 
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(os.path.dirname(__file__))
+    return os.path.join(base_path, relative_path)
+
 class SegyConfig:
     """Configuration management for SEGY GUI settings"""
     
@@ -2504,7 +2513,7 @@ class SegyGui(QMainWindow):
         layout.addWidget(date_label)
         
         # CCOM logo/image
-        logo_path = os.path.join(os.path.dirname(__file__), "media", "CCOM.png")
+        logo_path = resource_path(os.path.join("media", "CCOM.png"))
         if os.path.exists(logo_path):
             logo_label = QLabel()
             pixmap = QPixmap(logo_path)
